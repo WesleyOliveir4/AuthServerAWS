@@ -46,19 +46,13 @@ class SecurityConfig(
             .exceptionHandling {
                 it.authenticationEntryPoint { _, res, ex ->
                     res.sendError(HttpServletResponse.SC_UNAUTHORIZED, "UNAUTHORIZED")
-                        .also { log.warn("Authorization failed", ex)  }
                 }
             }
-            .headers { header -> header.frameOptions { it.disable() }}
+            .headers { header -> header.frameOptions { it.disable() } }
             .authorizeHttpRequests { requests ->
-                requests
-                    .requestMatchers(antMatcher(HttpMethod.GET)).permitAll()
-                    .requestMatchers(mvc.pattern(HttpMethod.POST, "/users")).permitAll()
-                    .requestMatchers(mvc.pattern(HttpMethod.POST, "/users/login")).permitAll()
-                    .requestMatchers(antMatcher("/h2-console/**")).permitAll()
-                    .anyRequest().authenticated()
+                requests.anyRequest().permitAll()
             }
-            .addFilterBefore(jwtTokenFilter, BasicAuthenticationFilter::class.java)
+
             .build()
 
     @Bean

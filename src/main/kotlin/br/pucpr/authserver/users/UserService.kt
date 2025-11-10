@@ -4,79 +4,167 @@ import br.pucpr.authserver.exception.BadRequestException
 import br.pucpr.authserver.exception.NotFoundException
 import br.pucpr.authserver.roles.RoleRepository
 import br.pucpr.authserver.security.Jwt
-import br.pucpr.authserver.users.controller.responses.LoginResponse
-import br.pucpr.authserver.users.controller.responses.UserResponse
+import br.pucpr.authserver.users.controller.responses.*
 import org.slf4j.LoggerFactory
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.data.domain.Sort
+import org.springframework.http.ResponseEntity
 import org.springframework.stereotype.Service
+import java.util.Random
+import java.util.UUID
 import kotlin.jvm.optionals.getOrNull
 
 @Service
 class UserService(
-    val repository: UserRepository,
-    val roleRepository: RoleRepository,
-    val jwt: Jwt
+    val repositoryAndroid: UserAndroidRepository,
 ) {
-    fun insert(user: User): User {
-        if (repository.findByEmail(user.email) != null) {
-            throw BadRequestException("User already exists")
+
+    fun loginAndroid(telephone: String, uuid: UUID, userName : String): ResponseEntity<LoginAndroidResponse?>{
+        val user = repositoryAndroid.findByTelephone(telephone)
+
+        if (user != null) {
+            if (user.uuid == uuid) {
+//                Caso o telefone e uuid existam para um usuário ativo, faça o login e retorne o usuário.
+                val userSave  = UserAndroid(
+                    telephone = telephone,
+                    uuid = uuid,
+                    userName = userName,
+                )
+                repositoryAndroid.save(userSave)
+
+                return ResponseEntity
+                    .status(200)
+                    .body (
+                        LoginAndroidResponse(
+                            user = UserAndroidResponse(
+                                userSave
+                            )
+                        )
+                    )
+            } else {
+                // SMS de confirmação
+                val smsCode = Math.random().toString().takeLast(5)
+                user.sms = smsCode
+
+                repositoryAndroid.save(user)
+
+                return ResponseEntity
+                    .status(202)
+                    .body (
+                        LoginAndroidResponse(
+                            user = UserAndroidResponse(
+                                user
+                            )
+                        )
+                    )
+            }
+        } else {
+            // Criar novo e enviar SMS
+
+            val userSave  = UserAndroid(
+                telephone = telephone,
+                userName = userName,
+                sms = Math.random().toString().takeLast(5)
+            )
+            repositoryAndroid.save(userSave)
+
+            return ResponseEntity
+                .status(202)
+                .body (
+                    LoginAndroidResponse(
+                        user = UserAndroidResponse(
+                            userSave
+                        )
+                    )
+                )
         }
-        return repository.save(user)
-            .also { log.info("User inserted: {}", it.id) }
     }
 
-    fun update(id: Long, name: String): User? {
-        val user = findByIdOrThrow(id)
-        if (user.name == name) return null
-        user.name = name
-        return repository.save(user)
-    }
+    fun confirmLoginAndroid(telephone: String, uuid: UUID, codeConfirmation : String): ResponseEntity<ConfirmLoginAndroidResponse?> {
+        val user = repositoryAndroid.findByTelephone(telephone)
+        if (user != null) {
+            if(user.sms.isEmpty()) {
+                //Usuario não tinha sms enviado para o telefone da request
+                return ResponseEntity
+                    .status(404)
+                    .body (
+                        ConfirmLoginAndroidResponse(
+                            UserAndroidResponse(
+                                user
+                            )
+                        )
+                    )
+            }else if(user.sms == codeConfirmation){
+                //Sms da request é igual ao sms cadastrado para o telefone
+                user.uuid = uuid
+                user.sms = ""
 
-    fun findAll(dir: SortDir = SortDir.ASC): List<User> = when (dir) {
-        SortDir.ASC -> repository.findAll(Sort.by("name").ascending())
-        SortDir.DESC -> repository.findAll(Sort.by("name").descending())
-    }
+                repositoryAndroid.save(user)
 
-    fun findByRole(role: String): List<User> = repository.findByRole(role)
+                return ResponseEntity
+                    .status(200)
+                    .body (
+                        ConfirmLoginAndroidResponse(
+                            UserAndroidResponse(
+                                user
+                            )
+                        )
+                    )
+            }
+            else{
+                //Sms da request é diferente do cadastrado para o telefone
 
-    fun findByIdOrNull(id: Long) = repository.findById(id).getOrNull()
-    private fun findByIdOrThrow(id: Long) =
-        findByIdOrNull(id) ?: throw NotFoundException(id)
+                return ResponseEntity
+                    .status(404)
+                    .body (
+                        ConfirmLoginAndroidResponse(
+                            UserAndroidResponse(
+                                user
+                            )
+                        )
+                    )
+            }
 
-    fun delete(id: Long): Boolean {
-        val user = findByIdOrNull(id) ?: return false
-        if (user.roles.any { it.name == "ADMIN" }) {
-            val count = repository.findByRole("ADMIN").size
-            if (count == 1) throw BadRequestException("Cannot delete the last system admin!")
+
+        }else{
+            //O telefone do usuario nunca foi cadastrado
+            return ResponseEntity
+                .status(404)
+                .body (
+                    ConfirmLoginAndroidResponse(
+                        UserAndroidResponse(
+                            UserAndroid()
+                        )
+                    )
+                )
         }
-        repository.delete(user)
-        log.info("User deleted: {}", user.id)
-        return true
+
     }
 
-    fun addRole(id: Long, roleName: String): Boolean {
-        val user = findByIdOrThrow(id)
-        if (user.roles.any { it.name == roleName }) return false
+    fun putUserAndroid(telephone: String,userName: String? ,userDescription: String?): Boolean{
+        val user = repositoryAndroid.findByTelephone(telephone)
 
-        val role = roleRepository.findByName(roleName) ?:
-            throw BadRequestException("Invalid role: $roleName")
+        if (user != null){
+            userName?.let {
+                user.userName = it
+            }
+            userDescription?.let {
+                user.userDescription = userDescription
+            }
+            repositoryAndroid.save(user)
+            return true
+        }else{
+            return false
+        }
 
-        user.roles.add(role)
-        repository.save(user)
-        log.info("Granted role {} to user {}", role.name, user.id)
-        return true
     }
 
-    fun login(email: String, password: String): LoginResponse? {
-        val user = repository.findByEmail(email) ?: return null
-        if (user.password != password) return null
+    fun getUserAndroid(telephone: String): GetUserAndroidResponse?{
+        val user = repositoryAndroid.findByTelephone(telephone) ?: return null
 
-        log.info("User logged in. id={}, name={}", user.id, user.name)
-        return LoginResponse(
-            token = jwt.createToken(user),
-            user = UserResponse(user)
+        return GetUserAndroidResponse(
+            user
         )
     }
 

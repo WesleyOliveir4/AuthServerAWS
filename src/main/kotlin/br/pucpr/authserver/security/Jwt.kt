@@ -1,6 +1,7 @@
 package br.pucpr.authserver.security
 
 import br.pucpr.authserver.users.User
+import br.pucpr.authserver.users.UserAndroid
 import io.jsonwebtoken.Jwts
 import io.jsonwebtoken.jackson.io.JacksonDeserializer
 import io.jsonwebtoken.jackson.io.JacksonSerializer
@@ -20,20 +21,6 @@ import java.util.Date
 class Jwt(
     val properties: TokenProperties
 ) {
-    fun createToken(user: User): String =
-        UserToken(user).let {
-            Jwts.builder()
-                .signWith(Keys.hmacShaKeyFor(properties.secret.toByteArray()))
-                .json(JacksonSerializer())
-                .claims()
-                    .issuedAt(utcNow().toDate())
-                    .expiration(utcNow().plusHours(properties.expireHours).toDate())
-                    .issuer(properties.issuer)
-                    .subject(it.id.toString())
-                    .add(mapOf(USER_FIELD to it))
-                .and()
-                .compact()
-        }
 
     fun extract(req: HttpServletRequest): Authentication? {
         try {
